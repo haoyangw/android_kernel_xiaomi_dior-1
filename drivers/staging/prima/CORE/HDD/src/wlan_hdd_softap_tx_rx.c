@@ -66,6 +66,12 @@
 #include <aniGlobal.h>
 #include <halTypes.h>
 #include <net/ieee80211_radiotap.h>
+#include <linux/ratelimit.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0))
+#include <soc/qcom/subsystem_restart.h>
+#else
+#include <mach/subsystem_restart.h>
+#endif
 
 
 /*--------------------------------------------------------------------------- 
@@ -101,6 +107,14 @@ static void hdd_softap_dump_sk_buff(struct sk_buff * skb)
 
 extern void hdd_set_wlan_suspend_mode(bool suspend);
 
+#define HDD_SAP_TX_TIMEOUT_RATELIMIT_INTERVAL 20*HZ
+#define HDD_SAP_TX_TIMEOUT_RATELIMIT_BURST    1
+#define HDD_SAP_TX_STALL_SSR_THRESHOLD        5
+
+static DEFINE_RATELIMIT_STATE(hdd_softap_tx_timeout_rs,                 \
+                              HDD_SAP_TX_TIMEOUT_RATELIMIT_INTERVAL,    \
+                              HDD_SAP_TX_TIMEOUT_RATELIMIT_BURST);
+
 /**============================================================================
   @brief hdd_softap_traffic_monitor_timeout_handler() -
          SAP/P2P GO traffin monitor timeout handler function
@@ -125,8 +139,6 @@ void hdd_softap_traffic_monitor_timeout_handler( void *pUsrData )
    if (pHddCtx->cfg_ini->trafficIdleTimeout <
        (currentTS - pHddCtx->traffic_monitor.lastFrameTs))
    {
-      VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-          "%s: No Data Activity calling Wlan Suspend", __func__ );
       hdd_set_wlan_suspend_mode(1);
       atomic_set(&pHddCtx->traffic_monitor.isActiveMode, 0);
    }
@@ -137,79 +149,6 @@ void hdd_softap_traffic_monitor_timeout_handler( void *pUsrData )
    }
 
    return;
-}
-
-VOS_STATUS hdd_start_trafficMonitor( hdd_adapter_t *pAdapter )
-{
-
-    hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
-    VOS_STATUS status = VOS_STATUS_SUCCESS;
-
-    status = wlan_hdd_validate_context(pHddCtx);
-
-    if (0 != status)
-    {
-        VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                   "%s: HDD context is not valid", __func__);
-        return status;
-    }
-
-    if ((pHddCtx->cfg_ini->enableTrafficMonitor) &&
-        (!pHddCtx->traffic_monitor.isInitialized))
-    {
-        atomic_set(&pHddCtx->traffic_monitor.isActiveMode, 1);
-        vos_timer_init(&pHddCtx->traffic_monitor.trafficTimer,
-                      VOS_TIMER_TYPE_SW,
-                      hdd_softap_traffic_monitor_timeout_handler,
-                      pHddCtx);
-        vos_lock_init(&pHddCtx->traffic_monitor.trafficLock);
-        pHddCtx->traffic_monitor.isInitialized = 1;
-        pHddCtx->traffic_monitor.lastFrameTs   = 0;
-        /* Start traffic monitor timer here
-         * If no AP assoc, immediatly go into suspend */
-        VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-                  "%s  Start Traffic Monitor Timer", __func__);
-        vos_timer_start(&pHddCtx->traffic_monitor.trafficTimer,
-                      pHddCtx->cfg_ini->trafficIdleTimeout);
-    }
-    else
-    {
-        VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-                  "%s  Traffic Monitor is not Enable in ini file", __func__);
-    }
-    return status;
-}
-
-VOS_STATUS hdd_stop_trafficMonitor( hdd_adapter_t *pAdapter )
-{
-    hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
-    VOS_STATUS status = VOS_STATUS_SUCCESS;
-
-    status = wlan_hdd_validate_context(pHddCtx);
-
-    if (-ENODEV == status)
-    {
-        VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                   "%s: HDD context is not valid", __func__);
-        return status;
-    }
-
-    if (pHddCtx->traffic_monitor.isInitialized)
-    {
-        if (VOS_TIMER_STATE_STOPPED !=
-            vos_timer_getCurrentState(&pHddCtx->traffic_monitor.trafficTimer))
-        {
-            VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-                      "%s  Stop Traffic Monitor Timer", __func__);
-            vos_timer_stop(&pHddCtx->traffic_monitor.trafficTimer);
-        }
-        VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-                  "%s  Destroy Traffic Monitor Timer", __func__);
-        vos_timer_destroy(&pHddCtx->traffic_monitor.trafficTimer);
-        vos_lock_destroy(&pHddCtx->traffic_monitor.trafficLock);
-        pHddCtx->traffic_monitor.isInitialized = 0;
-    }
-    return VOS_STATUS_SUCCESS;
 }
 
 /**============================================================================
@@ -607,12 +546,58 @@ xmit_end:
   ===========================================================================*/
 void hdd_softap_tx_timeout(struct net_device *dev)
 {
-   VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_ERROR,
+   hdd_adapter_t *pAdapter =  WLAN_HDD_GET_PRIV_PTR(dev);
+   struct netdev_queue *txq;
+   int i = 0;
+
+   VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
       "%s: Transmission timeout occurred", __func__);
-   //Getting here implies we disabled the TX queues for too long. Queues are 
-   //disabled either because of disassociation or low resource scenarios. In
-   //case of disassociation it is ok to ignore this. But if associated, we have
-   //do possible recovery here
+
+   if ( NULL == pAdapter )
+   {
+      VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+              FL("pAdapter is NULL"));
+      VOS_ASSERT(0);
+      return;
+   }
+
+   ++pAdapter->hdd_stats.hddTxRxStats.txTimeoutCount;
+
+   for (i = 0; i < 8; i++)
+   {
+      txq = netdev_get_tx_queue(dev, i);
+      VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                "Queue%d status: %d", i, netif_tx_queue_stopped(txq));
+   }
+
+   VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+              "carrier state: %d", netif_carrier_ok(dev));
+
+   ++pAdapter->hdd_stats.hddTxRxStats.continuousTxTimeoutCount;
+
+   if (pAdapter->hdd_stats.hddTxRxStats.continuousTxTimeoutCount >
+          HDD_SAP_TX_STALL_SSR_THRESHOLD)
+   {
+      // Driver could not recover, issue SSR
+      VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                "%s: Cannot recover from Data stall Issue SSR",
+                __func__);
+      subsystem_restart("wcnss");
+      return;
+   }
+
+   /* If Tx stalled for a long time then *hdd_tx_timeout* is called
+    * every 5sec. The TL debug spits out a lot of information on the
+    * serial console, if it is called every time *hdd_tx_timeout* is
+    * called then we may get a watchdog bite on the Application
+    * processor, so ratelimit the TL debug logs.
+    */
+   if (__ratelimit(&hdd_softap_tx_timeout_rs))
+   {
+      hdd_wmm_tx_snapshot(pAdapter);
+      WLANTL_TLDebugMessage(VOS_TRUE);
+   }
+
 } 
 
 
@@ -654,6 +639,8 @@ VOS_STATUS hdd_softap_init_tx_rx( hdd_adapter_t *pAdapter )
                            HDD_SOFTAP_VO_WEIGHT_DEFAULT
                          };
 
+   hdd_context_t *pHddCtx = NULL;
+
    pAdapter->isVosOutOfResource = VOS_FALSE;
    pAdapter->isVosLowResource = VOS_FALSE;
 
@@ -681,15 +668,35 @@ VOS_STATUS hdd_softap_init_tx_rx( hdd_adapter_t *pAdapter )
       }
    }
 
+   pHddCtx = (hdd_context_t *)pAdapter->pHddCtx;
+   if (NULL == pHddCtx)
+   {
+      VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_ERROR,
+                 "%s: Invalid HDD cntxt", __func__ );
+      return VOS_STATUS_E_INVAL;
+   }
+
    /* Update the AC weights suitable for SoftAP mode of operation */
    WLANTL_SetACWeights((WLAN_HDD_GET_CTX(pAdapter))->pvosContext, pACWeights);
 
-   if (VOS_STATUS_SUCCESS != hdd_start_trafficMonitor(pAdapter))
+   /* Initialize SAP/P2P-GO traffin monitor */
+   if ((pHddCtx->cfg_ini->enableTrafficMonitor) &&
+       (!pHddCtx->traffic_monitor.isInitialized))
    {
-       VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_ERROR,
-          "%s: failed to start Traffic Monito timer ", __func__ );
-       return VOS_STATUS_E_INVAL;
+      atomic_set(&pHddCtx->traffic_monitor.isActiveMode, 1);
+      vos_timer_init(&pHddCtx->traffic_monitor.trafficTimer,
+                     VOS_TIMER_TYPE_SW,
+                     hdd_softap_traffic_monitor_timeout_handler,
+                     pHddCtx);
+      vos_lock_init(&pHddCtx->traffic_monitor.trafficLock);
+      pHddCtx->traffic_monitor.isInitialized = 1;
+      pHddCtx->traffic_monitor.lastFrameTs   = 0;
+      /* Start traffic monitor timer here
+       * If no AP assoc, immediatly go into suspend */
+      vos_timer_start(&pHddCtx->traffic_monitor.trafficTimer,
+                      pHddCtx->cfg_ini->trafficIdleTimeout);
    }
+
    return status;
 }
 
@@ -704,12 +711,25 @@ VOS_STATUS hdd_softap_init_tx_rx( hdd_adapter_t *pAdapter )
 VOS_STATUS hdd_softap_deinit_tx_rx( hdd_adapter_t *pAdapter )
 {
    VOS_STATUS status = VOS_STATUS_SUCCESS;
+   hdd_context_t *pHddCtx = NULL;
 
-   if (VOS_STATUS_SUCCESS != hdd_stop_trafficMonitor(pAdapter))
+   pHddCtx = (hdd_context_t *)pAdapter->pHddCtx;
+   if (NULL == pHddCtx)
    {
-       VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_ERROR,
-                 "%s: Fail to Stop Traffic Monito timer", __func__ );
-       return VOS_STATUS_E_INVAL;
+      VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_ERROR,
+                 "%s: Invalid HDD cntxt", __func__ );
+      return VOS_STATUS_E_INVAL;
+   }
+   if (pHddCtx->traffic_monitor.isInitialized)
+   {
+      if (VOS_TIMER_STATE_STOPPED !=
+          vos_timer_getCurrentState(&pHddCtx->traffic_monitor.trafficTimer))
+      {
+         vos_timer_stop(&pHddCtx->traffic_monitor.trafficTimer);
+      }
+      vos_timer_destroy(&pHddCtx->traffic_monitor.trafficTimer);
+      vos_lock_destroy(&pHddCtx->traffic_monitor.trafficLock);
+      pHddCtx->traffic_monitor.isInitialized = 0;
    }
 
    status = hdd_softap_flush_tx_queues(pAdapter);
@@ -1206,6 +1226,7 @@ VOS_STATUS hdd_softap_tx_fetch_packet_cbk( v_VOID_t *vosContext,
    ++pAdapter->stats.tx_packets;
    ++pAdapter->hdd_stats.hddTxRxStats.txFetchDequeued;
    ++pAdapter->hdd_stats.hddTxRxStats.txFetchDequeuedAC[ac];
+   pAdapter->hdd_stats.hddTxRxStats.continuousTxTimeoutCount = 0;
 
    VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
               "%s: Valid VOS PKT returned to TL", __func__);
@@ -1553,14 +1574,29 @@ VOS_STATUS hdd_softap_RegisterSTA( hdd_adapter_t *pAdapter,
    VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
               "register station \n");
    VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-              "station mac " MAC_ADDRESS_STR,
-              MAC_ADDR_ARRAY(staDesc.vSTAMACAddress.bytes));
+              "station mac %02x:%02x:%02x:%02x:%02x:%02x",
+              staDesc.vSTAMACAddress.bytes[0],
+              staDesc.vSTAMACAddress.bytes[1],
+              staDesc.vSTAMACAddress.bytes[2],
+              staDesc.vSTAMACAddress.bytes[3],
+              staDesc.vSTAMACAddress.bytes[4],
+              staDesc.vSTAMACAddress.bytes[5]);
    VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-              "BSSIDforIBSS " MAC_ADDRESS_STR,
-              MAC_ADDR_ARRAY(staDesc.vBSSIDforIBSS.bytes));
+              "BSSIDforIBSS %02x:%02x:%02x:%02x:%02x:%02x",
+              staDesc.vBSSIDforIBSS.bytes[0],
+              staDesc.vBSSIDforIBSS.bytes[1],
+              staDesc.vBSSIDforIBSS.bytes[2],
+              staDesc.vBSSIDforIBSS.bytes[3],
+              staDesc.vBSSIDforIBSS.bytes[4],
+              staDesc.vBSSIDforIBSS.bytes[5]);
    VOS_TRACE( VOS_MODULE_ID_HDD_SOFTAP, VOS_TRACE_LEVEL_INFO,
-              "SOFTAP SELFMAC " MAC_ADDRESS_STR,
-              MAC_ADDR_ARRAY(staDesc.vSelfMACAddress.bytes));
+              "SOFTAP SELFMAC %02x:%02x:%02x:%02x:%02x:%02x",
+              staDesc.vSelfMACAddress.bytes[0],
+              staDesc.vSelfMACAddress.bytes[1],
+              staDesc.vSelfMACAddress.bytes[2],
+              staDesc.vSelfMACAddress.bytes[3],
+              staDesc.vSelfMACAddress.bytes[4],
+              staDesc.vSelfMACAddress.bytes[5]);
 
    vosStatus = hdd_softap_init_tx_rx_sta(pAdapter, staId, &staDesc.vSTAMACAddress);
 
@@ -1685,7 +1721,7 @@ VOS_STATUS hdd_softap_stop_bss( hdd_adapter_t *pAdapter)
     pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
 
     /*bss deregister is not allowed during wlan driver loading or unloading*/
-    if (pHddCtx->isLoadUnloadInProgress)
+    if (WLAN_HDD_IS_LOAD_UNLOAD_IN_PROGRESS(pHddCtx))
     {
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                    "%s:Loading_unloading in Progress. Ignore!!!",__func__);

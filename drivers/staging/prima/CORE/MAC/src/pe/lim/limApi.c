@@ -371,7 +371,6 @@ static void __limInitAssocVars(tpAniSirGlobal pMac)
         limLog( pMac, LOGP, FL( "cfg get assoc sta limit failed" ));
     }
     pMac->lim.gLimAssocStaLimit = val;
-    pMac->lim.gLimIbssStaLimit = val;
 
     // Place holder for current authentication request
     // being handled

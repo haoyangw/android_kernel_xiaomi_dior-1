@@ -517,8 +517,7 @@ limCheckRxRSNIeMatch(tpAniSirGlobal pMac, tDot11fIERSN rxRSNIe,tpPESession pSess
     theyRequirePMF = (rxRSNIe.RSN_Cap[0] >> 6) & 0x1;
     theyArePMFCapable = (rxRSNIe.RSN_Cap[0] >> 7) & 0x1;
 
-    if ((theyRequirePMF && theyArePMFCapable && !weArePMFCapable) ||
-        (weRequirePMF && !theyArePMFCapable))
+    if ((theyRequirePMF && !weArePMFCapable) || (weRequirePMF && !theyArePMFCapable))
     {
         limLog(pMac, LOG1, FL("Association fail, robust management frames policy violation"));
         return eSIR_MAC_ROBUST_MGMT_FRAMES_POLICY_VIOLATION;
@@ -1831,9 +1830,7 @@ limPopulatePeerRateSet(tpAniSirGlobal pMac,
     /* copy operational rate set from psessionEntry */
     if ( psessionEntry->rateSet.numRates <= SIR_MAC_RATESET_EID_MAX )
     {
-        vos_mem_copy((tANI_U8 *)tempRateSet.rate,
-                     (tANI_U8*)(psessionEntry->rateSet.rate),
-                     psessionEntry->rateSet.numRates);
+        palCopyMemory(pMac->hHdd,(tANI_U8 *)tempRateSet.rate,(tANI_U8*)(psessionEntry->rateSet.rate), psessionEntry->rateSet.numRates);
         tempRateSet.numRates = psessionEntry->rateSet.numRates;
     }
     else
@@ -1848,9 +1845,7 @@ limPopulatePeerRateSet(tpAniSirGlobal pMac,
 
         if (psessionEntry->extRateSet.numRates <= SIR_MAC_RATESET_EID_MAX)
         {
-            vos_mem_copy((tANI_U8 *)tempRateSet2.rate,
-                         (tANI_U8*)(psessionEntry->extRateSet.rate),
-                         psessionEntry->extRateSet.numRates);
+            palCopyMemory(pMac->hHdd,(tANI_U8 *)tempRateSet2.rate, (tANI_U8*)(psessionEntry->extRateSet.rate), psessionEntry->extRateSet.numRates);
             tempRateSet2.numRates = psessionEntry->extRateSet.numRates;
         }
         else {
@@ -1879,7 +1874,7 @@ limPopulatePeerRateSet(tpAniSirGlobal pMac,
     {
         tANI_U8 aRateIndex = 0;
         tANI_U8 bRateIndex = 0;
-        vos_mem_set((tANI_U8 *) pRates, sizeof(tSirSupportedRates), 0);
+        palZeroMemory( pMac->hHdd, (tANI_U8 *) pRates, sizeof(tSirSupportedRates));
         for(i = 0;i < tempRateSet.numRates; i++)
         {
             min = 0;
@@ -3510,9 +3505,15 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
                 &pAddBssParams->staContext.assocId, &psessionEntry->dph.dphHashTable);
         if (pStaDs == NULL)
         {
-            PELOGE(limLog(pMac, LOGE, FL("Couldn't get assoc id for "
-                       "MAC ADDR: " MAC_ADDRESS_STR),
-                       MAC_ADDR_ARRAY(pAddBssParams->staContext.staMac));)
+            PELOGE(limLog(pMac, LOGE, FL("Couldn't get assoc id for"
+                       "MAC ADDR: %02x:%02x:%02x:%02x:%02x:%02x"),
+                       pAddBssParams->staContext.staMac[0],
+                       pAddBssParams->staContext.staMac[1],
+                       pAddBssParams->staContext.staMac[2],
+                       pAddBssParams->staContext.staMac[3],
+                       pAddBssParams->staContext.staMac[4],
+                       pAddBssParams->staContext.staMac[5]
+                       );)
         }
         pAddBssParams->staContext.uAPSD = 0;
         pAddBssParams->staContext.maxSPLen = 0;
