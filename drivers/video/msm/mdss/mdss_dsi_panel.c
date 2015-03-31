@@ -252,7 +252,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 				pdata->panel_info.rst_seq[i]);
 			if (pdata->panel_info.rst_seq[++i])
 				usleep(pdata->panel_info.rst_seq[i] * 1000);
->>>>>>> 9bd9520... Revert "msm: mdss: Avoid GPIO warnings during boot up"
 		}
 		if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
 			if (pinfo->mode_gpio_state == MODE_GPIO_HIGH)
