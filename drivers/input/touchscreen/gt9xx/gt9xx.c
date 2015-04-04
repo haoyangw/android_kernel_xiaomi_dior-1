@@ -52,6 +52,12 @@
 #include <linux/input/mt.h>
 #include <linux/debugfs.h>
 
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+#include <linux/input/doubletap2wake.h>
+#endif
+#endif
+
 #define GOODIX_DEV_NAME	"Goodix-CTP"
 #define CFG_MAX_TOUCH_POINTS	5
 #define GOODIX_COORDS_ARR_SIZE	4
@@ -305,6 +311,15 @@ Output:
 void gtp_irq_disable(struct goodix_ts_data *ts)
 {
 	unsigned long irqflags;
+	
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	bool prevent_sleep = (dt2w_switch > 0);
+#endif
+	if (prevent_sleep) {
+		enable_irq_wake(ts->client->irq);
+	} else {
+#endif
 
 	spin_lock_irqsave(&ts->irq_lock, irqflags);
 	if (!ts->irq_is_disabled) {
@@ -312,6 +327,9 @@ void gtp_irq_disable(struct goodix_ts_data *ts)
 		disable_irq_nosync(ts->client->irq);
 	}
 	spin_unlock_irqrestore(&ts->irq_lock, irqflags);
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	} // if (prevent_sleep)
+#endif
 }
 
 /*******************************************************
@@ -325,6 +343,14 @@ Output:
 void gtp_irq_enable(struct goodix_ts_data *ts)
 {
 	unsigned long irqflags = 0;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	bool prevent_sleep = (dt2w_switch > 0);
+#endif
+	if (prevent_sleep) {
+		disable_irq_wake(ts->client->irq);
+	} else {
+#endif
 
 	spin_lock_irqsave(&ts->irq_lock, irqflags);
 	if (ts->irq_is_disabled) {
@@ -332,6 +358,9 @@ void gtp_irq_enable(struct goodix_ts_data *ts)
 		ts->irq_is_disabled = false;
 	}
 	spin_unlock_irqrestore(&ts->irq_lock, irqflags);
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	} // if (prevent_sleep)
+#endif
 }
 
 /*******************************************************
@@ -979,7 +1008,11 @@ static int gtp_init_panel(struct goodix_ts_data *ts)
 				+ config_data[RESOLUTION_LOC];
 		ts->abs_y_max = (config_data[RESOLUTION_LOC + 3] << 8)
 				+ config_data[RESOLUTION_LOC + 2];
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+		ts->int_trigger_type = ( (config_data[TRIGGER_LOC]) & 0x03 ) | IRQF_NO_SUSPEND;
+#else
 		ts->int_trigger_type = (config_data[TRIGGER_LOC]) & 0x03;
+#endif
 	}
 	ret = gtp_send_cfg(ts);
 	if (ret < 0)
@@ -2041,7 +2074,11 @@ static int goodix_ts_probe(struct i2c_client *client,
 		dev_err(&client->dev, "GTP init panel failed.\n");
 		ts->abs_x_max = GTP_MAX_WIDTH;
 		ts->abs_y_max = GTP_MAX_HEIGHT;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+		ts->int_trigger_type = GTP_INT_TRIGGER | (u8) IRQF_NO_SUSPEND;
+#else
 		ts->int_trigger_type = GTP_INT_TRIGGER;
+#endif
 	}
 
 	ret = gtp_request_input_dev(ts);
@@ -2221,6 +2258,14 @@ static int goodix_ts_suspend(struct device *dev)
 {
 	struct goodix_ts_data *ts = dev_get_drvdata(dev);
 	int ret = 0, i;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	bool prevent_sleep = (dt2w_switch > 0);
+#endif
+	if (prevent_sleep) {
+		enable_irq_wake(ts->client->irq);
+	} else {
+#endif
 
 	if (ts->gtp_is_suspend) {
 		dev_dbg(&ts->client->dev, "Already in suspend state.\n");
@@ -2261,6 +2306,9 @@ static int goodix_ts_suspend(struct device *dev)
 	msleep(58);
 	mutex_unlock(&ts->lock);
 	ts->gtp_is_suspend = 1;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	} // if (prevent_sleep)
+#endif
 
 	return ret;
 }
@@ -2277,6 +2325,15 @@ static int goodix_ts_resume(struct device *dev)
 {
 	struct goodix_ts_data *ts = dev_get_drvdata(dev);
 	int ret = 0;
+
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	bool prevent_sleep = (dt2w_switch > 0);
+#endif
+	if (prevent_sleep) {
+		disable_irq_wake(ts->client->irq);
+	} else {
+#endif
 
 	if (!ts->gtp_is_suspend) {
 		dev_dbg(&ts->client->dev, "Already in awake state.\n");
@@ -2300,6 +2357,9 @@ static int goodix_ts_resume(struct device *dev)
 #endif
 	mutex_unlock(&ts->lock);
 	ts->gtp_is_suspend = 0;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	} // if (prevent_sleep)
+#endif
 
 	return ret;
 }
