@@ -315,6 +315,7 @@ static int32_t msm_sensor_validate_slave_info(
 }
 
 extern int h3lte_get_front_sensor_name(char*);
+extern int h3lte_get_back_sensor_name(char*);
 /* static function definition */
 int32_t msm_sensor_driver_probe(void *setting)
 {
@@ -354,13 +355,20 @@ int32_t msm_sensor_driver_probe(void *setting)
 	if (strcmp(slave_info->eeprom_name, "sunny_ov5693_p5v40a") == 0) {
 		h3lte_get_front_sensor_name(h3lte_sensor_name);
 		if (strcmp(slave_info->sensor_name, h3lte_sensor_name) != 0) {
-			printk("%s %d: sensor name not match!\n", __func__, __LINE__);
+			printk("%s %d: front sensor name not match!\n", __func__, __LINE__);
+			rc = -EFAULT;
+			goto FREE_SLAVE_INFO;
+		}
+	} else if (strcmp(slave_info->eeprom_name, "sunny_q13s01b") == 0) {
+		h3lte_get_back_sensor_name(h3lte_sensor_name);
+		if (strcmp(slave_info->sensor_name, h3lte_sensor_name) != 0) {
+			printk("%s %d: back sensor name not match!\n", __func__, __LINE__);
 			rc = -EFAULT;
 			goto FREE_SLAVE_INFO;
 		}
 	}
 	/* Print slave info */
-	CDBG("get front sensor name %s\n", h3lte_sensor_name);
+	CDBG("get front/back sensor name %s\n", h3lte_sensor_name);
 	CDBG("sensor name %s\n", slave_info->sensor_name);
 	CDBG("eeprom name %s\n", slave_info->eeprom_name);
 	CDBG("actuator name %s\n", slave_info->actuator_name);

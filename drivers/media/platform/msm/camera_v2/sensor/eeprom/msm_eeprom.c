@@ -55,17 +55,21 @@ static int msm_eeprom_verify_sum(const char *mem, uint32_t size, uint32_t sum)
 }
 
 static int h3lte_set_front_sensor_name = 0;
+static int h3lte_set_back_sensor_name = 0;
 static char h3lte_front_sensor_name[32];
+static char h3lte_back_sensor_name[32];
 static void h3lte_set_sensor_name(char* eeprom_name, char* mapdata)
 {
 	uint8_t *memptr;
 	int i = 0;
 
-	if ((eeprom_name == NULL) || (mapdata == NULL) || h3lte_set_front_sensor_name)
+	if ((eeprom_name == NULL) || (mapdata == NULL) || h3lte_set_front_sensor_name || h3lte_set_back_sensor_name)
 		return;
 
-	if (strcmp(eeprom_name, "sunny_ov5693_p5v40a") != 0)
+	if ((strcmp(eeprom_name, "sunny_ov5693_p5v40a") != 0) && (strcmp(eeprom_name, "sunny_q13s01b") != 0))
 		return;
+
+	if(strcmp(eeprom_name, "sunny_ov5693_p5v40a") == 0) {
 
 	memptr = mapdata;
 
@@ -88,6 +92,13 @@ static void h3lte_set_sensor_name(char* eeprom_name, char* mapdata)
 
 	printk("%s: sensor_name = %s, is set = %d\n",
 			__func__, h3lte_front_sensor_name, h3lte_set_front_sensor_name);
+	}//if is front camera p5v40a
+	else if(strcmp(eeprom_name, "sunny_q13s01b") {
+		strcpy(h3lte_back_sensor_name, "q13s01b");
+		h3lte_set_back_sensor_name = 1;
+		printk("%s: sensor_name = %s, is set = %d\n",
+			__func__, h3lte_back_sensor_name, h3lte_set_back_sensor_name);
+	}//if is back camera q13s01b
 	return;
 }
 
@@ -101,6 +112,17 @@ int h3lte_get_front_sensor_name(char* sensor_name)
 		return -EINVAL;
 }
 EXPORT_SYMBOL(h3lte_get_front_sensor_name);
+
+int h3lte_get_back_sensor_name(char* sensor_name)
+{
+	if (h3lte_set_back_sensor_name) {
+		strcpy(sensor_name, h3lte_back_sensor_name);
+		return 0;
+	}
+	else
+		return -EINVAL;
+}
+EXPORT_SYMBOL(h3lte_get_back_sensor_name);
 
 /**
   * msm_eeprom_match_crc - verify multiple regions using crc
