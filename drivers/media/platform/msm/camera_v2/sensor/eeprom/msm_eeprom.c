@@ -93,7 +93,7 @@ static void h3lte_set_sensor_name(char* eeprom_name, char* mapdata)
 	printk("%s: sensor_name = %s, is set = %d\n",
 			__func__, h3lte_front_sensor_name, h3lte_set_front_sensor_name);
 	}//if is front camera p5v40a
-	else if(strcmp(eeprom_name, "sunny_q13s01b") {
+	else if(strcmp(eeprom_name, "sunny_q13s01b")) {
 		strcpy(h3lte_back_sensor_name, "q13s01b");
 		h3lte_set_back_sensor_name = 1;
 		printk("%s: sensor_name = %s, is set = %d\n",
