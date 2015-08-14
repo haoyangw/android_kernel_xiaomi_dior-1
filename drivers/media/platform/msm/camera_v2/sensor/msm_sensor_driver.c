@@ -355,14 +355,14 @@ int32_t msm_sensor_driver_probe(void *setting)
 	if (strcmp(slave_info->eeprom_name, "sunny_ov5693_p5v40a") == 0) {
 		h3lte_get_front_sensor_name(h3lte_sensor_name);
 		if (strcmp(slave_info->sensor_name, h3lte_sensor_name) != 0) {
-			printk("%s %d: front sensor name not match!\n", __func__, __LINE__);
+			printk("%s %d: front sensor name not match! %s vs %s\n", __func__, __LINE__, slave_info->sensor_name, h3lte_sensor_name);
 			rc = -EFAULT;
 			goto FREE_SLAVE_INFO;
 		}
 	} else if (strcmp(slave_info->eeprom_name, "sunny_q13s01b") == 0) {
 		h3lte_get_back_sensor_name(h3lte_sensor_name);
 		if (strcmp(slave_info->sensor_name, h3lte_sensor_name) != 0) {
-			printk("%s %d: back sensor name not match!\n", __func__, __LINE__);
+			printk("%s %d: back sensor name not match! %s vs %s\n", __func__, __LINE__, slave_info->sensor_name, h3lte_sensor_name);
 			rc = -EFAULT;
 			goto FREE_SLAVE_INFO;
 		}
