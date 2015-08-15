@@ -62,13 +62,31 @@ static void h3lte_set_sensor_name(char* eeprom_name, char* mapdata)
 {
 	uint8_t *memptr;
 	int i = 0;
+	//TODO: Remove b and the debug mapdata printer
+	int b = 0;
 
-	if ((eeprom_name == NULL) || (mapdata == NULL) || h3lte_set_front_sensor_name || h3lte_set_back_sensor_name)
+	if ((eeprom_name == NULL) || (mapdata == NULL) || ((h3lte_set_front_sensor_name) && (h3lte_set_back_sensor_name))) {
+		printk("sensor already set! sensor names: front = %s, back = %s", h3lte_front_sensor_name, h3lte_back_sensor_name);
 		return;
+	}
+	
+	//Code below kind of useless, since there is already the strcmp checks, an else statement would be better
+	/*if ((strcmp(eeprom_name, "sunny_ov5693_p5v40a") != 0) && (strcmp(eeprom_name, "sunny_q13s01b") != 0))
+		return;*/
+	
+	//DEBUG: Print entire mapdata
+	printk("debug: camera mapdata: ");
+	for (b = 0; b < 3; b++) {
+		memptr = mapdata;
+		printk("%d at component number: %d", memptr[b * 16], b);
+		printk("%d at component number: %d", memptr[b * 16 + 1], b);
+		if(memptr[b * 16] == 0x40) {
+			printk("front sensor encountered at component number: %d", b);
+			}
+		}
+	printk("\n");
 
-	if ((strcmp(eeprom_name, "sunny_ov5693_p5v40a") != 0) && (strcmp(eeprom_name, "sunny_q13s01b") != 0))
-		return;
-
+	//check if it's front camera p5v40a, then set front sensor name
 	if(strcmp(eeprom_name, "sunny_ov5693_p5v40a") == 0) {
 
 	memptr = mapdata;
@@ -92,13 +110,19 @@ static void h3lte_set_sensor_name(char* eeprom_name, char* mapdata)
 
 	printk("%s: sensor_name = %s, is set = %d\n",
 			__func__, h3lte_front_sensor_name, h3lte_set_front_sensor_name);
-	}//if is front camera p5v40a
+	}//end: if is front camera p5v40a
+	//check if it is back camera q13s01b instead, then set back camera name
+	//TODO: add similar check like above for back camera to allow s5k3l2_omiba01(note: 3L not 3i)
 	else if(strcmp(eeprom_name, "sunny_q13s01b") == 0) {
-		strcpy(h3lte_back_sensor_name, "q13s01b");
+		strcpy(h3lte_back_sensor_name, "s5k3l2_q13s01b");
 		h3lte_set_back_sensor_name = 1;
 		printk("%s: sensor_name = %s, is set = %d\n",
 			__func__, h3lte_back_sensor_name, h3lte_set_back_sensor_name);
-	}//if is back camera q13s01b
+	}//end: if is back camera q13s01b
+	//unknown sensor name
+	else {
+		printk("Unkown sensor eeprom name: %s\n", eeprom_name);
+	}
 	return;
 }
 
@@ -120,6 +144,8 @@ int h3lte_get_back_sensor_name(char* sensor_name)
 		return 0;
 	}
 	else
+		//TODO: remove the line below
+		printk("back sensor name NOT set!");
 		return -EINVAL;
 }
 EXPORT_SYMBOL(h3lte_get_back_sensor_name);
@@ -421,7 +447,10 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 			}
 		}
 	}
+	//Front camera
 	h3lte_set_sensor_name("sunny_ov5693_p5v40a", block->mapdata);
+	//Back camera
+	h3lte_set_sensor_name("sunny_q13s01b", block->mapdata);
 	return rc;
 }
 /**

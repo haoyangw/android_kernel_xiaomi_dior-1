@@ -355,17 +355,19 @@ int32_t msm_sensor_driver_probe(void *setting)
 	if (strcmp(slave_info->eeprom_name, "sunny_ov5693_p5v40a") == 0) {
 		h3lte_get_front_sensor_name(h3lte_sensor_name);
 		if (strcmp(slave_info->sensor_name, h3lte_sensor_name) != 0) {
-			printk("%s %d: front sensor name not match! %s vs %s\n", __func__, __LINE__, slave_info->sensor_name, h3lte_sensor_name);
+			printk("%s %d: front sensor name not match! Actual front sensor: %s vs detected front sensor: %s\n", __func__, __LINE__, slave_info->sensor_name, h3lte_sensor_name);
 			rc = -EFAULT;
 			goto FREE_SLAVE_INFO;
 		}
+		printk("front sensor check pass! Actual front sensor: %s vs detected front sensor: %s\n", slave_info->sensor_name, h3lte_sensor_name);
 	} else if (strcmp(slave_info->eeprom_name, "sunny_q13s01b") == 0) {
 		h3lte_get_back_sensor_name(h3lte_sensor_name);
 		if (strcmp(slave_info->sensor_name, h3lte_sensor_name) != 0) {
-			printk("%s %d: back sensor name not match! %s vs %s\n", __func__, __LINE__, slave_info->sensor_name, h3lte_sensor_name);
+			printk("%s %d: back sensor name not match! Actual back sensor: %s vs detected back sensor: %s\n", __func__, __LINE__, slave_info->sensor_name, h3lte_sensor_name);
 			rc = -EFAULT;
 			goto FREE_SLAVE_INFO;
 		}
+		printk("back sensor check pass! Actual back sensor: %s vs detected back sensor: %s\n", slave_info->sensor_name, h3lte_sensor_name);
 	}
 	/* Print slave info */
 	CDBG("get front/back sensor name %s\n", h3lte_sensor_name);
