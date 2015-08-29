@@ -1,0 +1,12 @@
+Kernel source repo forked from Stane1983
+
+Branch description:
+cm-12.0: stock cm12 kernel without extra governors and I/O schedulers
+cm-12.0-custom: CM12 custom kernel with extra governors and I/O schedulers
+stock: Original kernel source from Xiaomi with only fixes for compilation errors
+cm-12.0-wip: latest fixes/additions for cm12 that may not work/compile successfully
+
+Upcoming(when it appears on the kernel source repo, cm12.1 is coming :)):
+cm-12.1: CM12.1 custom kernel with extra governors and I/O schedulers
+cm-12.1-custom: stock cm12.1 kernel without extra governors and I/O schedulers
+wip-cm12.1: latest fixes/additions for cm12.1 that may not work/compile successfully
