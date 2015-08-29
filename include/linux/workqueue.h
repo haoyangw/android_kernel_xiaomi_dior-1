@@ -16,6 +16,7 @@ struct workqueue_struct;
 
 struct work_struct;
 typedef void (*work_func_t)(struct work_struct *work);
+void delayed_work_timer_fn(unsigned long __data);
 
 /*
  * The first word is the work queue pointer and the flags rolled into
@@ -193,6 +194,32 @@ static inline unsigned int work_static(struct work_struct *work) { return 0; }
 	} while (0)
 #endif
 
+#define INIT_WORK_CUST(_work, _func)					\
+	do {							\
+		__INIT_WORK((_work), (_func), 0);		\
+	} while (0)
+
+#ifdef CONFIG_LOCKDEP
+#define __INIT_WORK_CUST(_work, _func, _onstack)				\
+	do {								\
+		static struct lock_class_key __key;			\
+									\
+		__init_work((_work), _onstack);				\
+		(_work)->data = (atomic_long_t) WORK_DATA_INIT();	\
+		lockdep_init_map(&(_work)->lockdep_map, #_work, &__key, 0);\
+		INIT_LIST_HEAD(&(_work)->entry);			\
+		PREPARE_WORK((_work), (_func));				\
+	} while (0)
+#else
+#define __INIT_WORK_CUST(_work, _func, _onstack)				\
+	do {								\
+		__init_work((_work), _onstack);				\
+		(_work)->data = (atomic_long_t) WORK_DATA_INIT();	\
+		INIT_LIST_HEAD(&(_work)->entry);			\
+		PREPARE_WORK((_work), (_func));				\
+	} while (0)
+#endif
+
 #define INIT_WORK(_work, _func)					\
 	do {							\
 		__INIT_WORK((_work), (_func), 0);		\
@@ -220,6 +247,29 @@ static inline unsigned int work_static(struct work_struct *work) { return 0; }
 		INIT_WORK(&(_work)->work, (_func));		\
 		init_timer_deferrable(&(_work)->timer);		\
 	} while (0)
+
+#define __INIT_DELAYED_WORK(_work, _func, _tflags)			\
+	do {								\
+		INIT_WORK(&(_work)->work, (_func));			\
+		__setup_timer(&(_work)->timer, delayed_work_timer_fn,	\
+			      (unsigned long)(_work),			\
+			      (_tflags) | TIMER_IRQSAFE);		\
+	} while (0)
+
+#define __INIT_DELAYED_WORK_ONSTACK(_work, _func, _tflags)		\
+	do {								\
+		INIT_WORK_ONSTACK(&(_work)->work, (_func));		\
+		__setup_timer_on_stack(&(_work)->timer,			\
+				       delayed_work_timer_fn,		\
+				       (unsigned long)(_work),		\
+				       (_tflags) | TIMER_IRQSAFE);	\
+	} while (0)
+
+#define INIT_DEFERRABLE_WORK(_work, _func)				\
+	__INIT_DELAYED_WORK(_work, _func, TIMER_DEFERRABLE)
+
+#define INIT_DEFERRABLE_WORK_ONSTACK(_work, _func)			\
+	__INIT_DELAYED_WORK_ONSTACK(_work, _func, TIMER_DEFERRABLE)
 
 /**
  * work_pending - Find out whether a work item is currently pending

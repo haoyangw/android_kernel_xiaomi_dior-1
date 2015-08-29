@@ -548,18 +548,64 @@ static inline void debug_timer_assert_init(struct timer_list *timer)
 	debug_object_assert_init(timer, &timer_debug_descr);
 }
 
-static void __init_timer(struct timer_list *timer,
+/**
+ * init_timer_key - initialize a timer
+ * @timer: the timer to be initialized
+ * @flags: timer flags
+ * @name: name of the timer
+ * @key: lockdep class key of the fake lock used for tracking timer
+ *       sync lock dependencies
+ *
+ * init_timer_key() must be done to a timer prior calling *any* of the
+ * other timer functions.
+ */
+static void do_init_timer(struct timer_list *timer, unsigned int flags,
+			  const char *name, struct lock_class_key *key);
+
+static void do_init_timer(struct timer_list *timer, unsigned int flags,
+			  const char *name, struct lock_class_key *key)
+{
+	struct tvec_base *base = __raw_get_cpu_var(tvec_bases);
+
+	timer->entry.next = NULL;
+	timer->base = (void *)((unsigned long)base | flags);
+	timer->slack = -1;
+#ifdef CONFIG_TIMER_STATS
+	timer->start_site = NULL;
+	timer->start_pid = -1;
+	memset(timer->start_comm, 0, TASK_COMM_LEN);
+#endif
+	lockdep_init_map(&timer->lockdep_map, name, key, 0);
+}
+
+void init_timer_key(struct timer_list *timer, unsigned int flags,
+		    const char *name, struct lock_class_key *key)
+{
+	debug_init(timer);
+	do_init_timer(timer, flags, name, key);
+}
+EXPORT_SYMBOL(init_timer_key);
+
+static void __init_timer_old(struct timer_list *timer,
 			 const char *name,
 			 struct lock_class_key *key);
 
-void init_timer_on_stack_key(struct timer_list *timer,
+void init_timer_on_stack_key(struct timer_list *timer, unsigned int flags,
+			     const char *name, struct lock_class_key *key)
+{
+	debug_object_init_on_stack(timer, &timer_debug_descr);
+	do_init_timer(timer, flags, name, key);
+}
+EXPORT_SYMBOL_GPL(init_timer_on_stack_key);
+
+void init_timer_on_stack_key_old(struct timer_list *timer,
 			     const char *name,
 			     struct lock_class_key *key)
 {
 	debug_object_init_on_stack(timer, &timer_debug_descr);
-	__init_timer(timer, name, key);
+	__init_timer_old(timer, name, key);
 }
-EXPORT_SYMBOL_GPL(init_timer_on_stack_key);
+EXPORT_SYMBOL_GPL(init_timer_on_stack_key_old);
 
 void destroy_timer_on_stack(struct timer_list *timer)
 {
@@ -599,7 +645,7 @@ static inline void debug_assert_init(struct timer_list *timer)
 	debug_timer_assert_init(timer);
 }
 
-static void __init_timer(struct timer_list *timer,
+static void __init_timer_old(struct timer_list *timer,
 			 const char *name,
 			 struct lock_class_key *key)
 {
@@ -622,7 +668,7 @@ void setup_deferrable_timer_on_stack_key(struct timer_list *timer,
 {
 	timer->function = function;
 	timer->data = data;
-	init_timer_on_stack_key(timer, name, key);
+	init_timer_on_stack_key_old(timer, name, key);
 	timer_set_deferrable(timer);
 }
 EXPORT_SYMBOL_GPL(setup_deferrable_timer_on_stack_key);
@@ -637,20 +683,20 @@ EXPORT_SYMBOL_GPL(setup_deferrable_timer_on_stack_key);
  * init_timer_key() must be done to a timer prior calling *any* of the
  * other timer functions.
  */
-void init_timer_key(struct timer_list *timer,
+void init_timer_key_old(struct timer_list *timer,
 		    const char *name,
 		    struct lock_class_key *key)
 {
 	debug_init(timer);
-	__init_timer(timer, name, key);
+	__init_timer_old(timer, name, key);
 }
-EXPORT_SYMBOL(init_timer_key);
+EXPORT_SYMBOL(init_timer_key_old);
 
 void init_timer_deferrable_key(struct timer_list *timer,
 			       const char *name,
 			       struct lock_class_key *key)
 {
-	init_timer_key(timer, name, key);
+	init_timer_key_old(timer, name, key);
 	timer_set_deferrable(timer);
 }
 EXPORT_SYMBOL(init_timer_deferrable_key);

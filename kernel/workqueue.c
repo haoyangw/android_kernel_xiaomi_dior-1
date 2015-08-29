@@ -1088,13 +1088,14 @@ queue_work_on(int cpu, struct workqueue_struct *wq, struct work_struct *work)
 }
 EXPORT_SYMBOL_GPL(queue_work_on);
 
-static void delayed_work_timer_fn(unsigned long __data)
+void delayed_work_timer_fn(unsigned long __data)
 {
 	struct delayed_work *dwork = (struct delayed_work *)__data;
 	struct cpu_workqueue_struct *cwq = get_work_cwq(&dwork->work);
 
 	__queue_work(smp_processor_id(), cwq->wq, &dwork->work);
 }
+EXPORT_SYMBOL_GPL(delayed_work_timer_fn);
 
 /**
  * queue_delayed_work - queue work on a workqueue after delay

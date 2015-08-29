@@ -58,7 +58,9 @@ extern struct tvec_base boot_tvec_bases;
  * the timer will be serviced when the CPU eventually wakes up with a
  * subsequent non-deferrable timer.
  */
+#define TIMER_DEFERRABLE		0x1LU
 #define TBASE_DEFERRABLE_FLAG		(0x1)
+#define TIMER_IRQSAFE			0x2LU
 
 #define TIMER_INITIALIZER(_function, _expires, _data) {		\
 		.entry = { .prev = TIMER_ENTRY_STATIC },	\
@@ -88,7 +90,10 @@ extern struct tvec_base boot_tvec_bases;
 	struct timer_list _name =				\
 		TIMER_INITIALIZER(_function, _expires, _data)
 
-void init_timer_key(struct timer_list *timer,
+void init_timer_key(struct timer_list *timer, unsigned int flags,
+		    const char *name, struct lock_class_key *key);
+
+void init_timer_key_old(struct timer_list *timer,
 		    const char *name,
 		    struct lock_class_key *key);
 void init_timer_deferrable_key(struct timer_list *timer,
@@ -99,7 +104,7 @@ void init_timer_deferrable_key(struct timer_list *timer,
 #define init_timer(timer)						\
 	do {								\
 		static struct lock_class_key __key;			\
-		init_timer_key((timer), #timer, &__key);		\
+		init_timer_key_old((timer), #timer, &__key);		\
 	} while (0)
 
 #define init_timer_deferrable(timer)					\
@@ -111,7 +116,7 @@ void init_timer_deferrable_key(struct timer_list *timer,
 #define init_timer_on_stack(timer)					\
 	do {								\
 		static struct lock_class_key __key;			\
-		init_timer_on_stack_key((timer), #timer, &__key);	\
+		init_timer_on_stack_key_old((timer), #timer, &__key);	\
 	} while (0)
 
 #define setup_timer(timer, fn, data)					\
@@ -126,20 +131,35 @@ void init_timer_deferrable_key(struct timer_list *timer,
 		setup_timer_on_stack_key((timer), #timer, &__key,	\
 					 (fn), (data));			\
 	} while (0)
-#define setup_deferrable_timer_on_stack(timer, fn, data)		\
+#define __init_timer(_timer, _flags)					\
 	do {								\
+		static struct lock_class_key __key;			\
+		init_timer_key((_timer), (_flags), #_timer, &__key);	\
+	} while (0)
+
+#define __init_timer_on_stack(_timer, _flags)				\
+	do {								\
+		static struct lock_class_key __key;			\
+		init_timer_on_stack_key((_timer), (_flags), #_timer, &__key); \
+	} while (0)
+#define setup_deferrable_timer_on_stack(timer, fn, data)		\
+	do {								y\
 		static struct lock_class_key __key;			\
 		setup_deferrable_timer_on_stack_key((timer), #timer,	\
 						    &__key, (fn),	\
 						    (data));		\
 	} while (0)
 #else
+#define __init_timer(_timer, _flags)					\
+	init_timer_key((_timer), (_flags), NULL, NULL)
+#define __init_timer_on_stack(_timer, _flags)				\
+	init_timer_on_stack_key((_timer), (_flags), NULL, NULL)
 #define init_timer(timer)\
-	init_timer_key((timer), NULL, NULL)
+	init_timer_key_old((timer), NULL, NULL)
 #define init_timer_deferrable(timer)\
 	init_timer_deferrable_key((timer), NULL, NULL)
 #define init_timer_on_stack(timer)\
-	init_timer_on_stack_key((timer), NULL, NULL)
+	init_timer_on_stack_key_old((timer), NULL, NULL)
 #define setup_timer(timer, fn, data)\
 	setup_timer_key((timer), NULL, NULL, (fn), (data))
 #define setup_timer_on_stack(timer, fn, data)\
@@ -147,19 +167,53 @@ void init_timer_deferrable_key(struct timer_list *timer,
 #define setup_deferrable_timer_on_stack(timer, fn, data)\
 	setup_deferrable_timer_on_stack_key((timer), NULL, NULL, (fn), (data))
 #endif
+#define init_timer_cust(timer)						\
+	__init_timer((timer), 0)
+#define init_timer_deferrable_cust(timer)					\
+	__init_timer((timer), TIMER_DEFERRABLE)
+#define init_timer_on_stack_cust(timer)					\
+	__init_timer_on_stack((timer), 0)
+#define __setup_timer(_timer, _fn, _data, _flags)			\
+	do {								\
+		__init_timer((_timer), (_flags));			\
+		(_timer)->function = (_fn);				\
+		(_timer)->data = (_data);				\
+	} while (0)
+
+#define __setup_timer_on_stack(_timer, _fn, _data, _flags)		\
+	do {								\
+		__init_timer_on_stack((_timer), (_flags));		\
+		(_timer)->function = (_fn);				\
+		(_timer)->data = (_data);				\
+	} while (0)
+#define setup_timer_cust(timer, fn, data)					\
+	__setup_timer((timer), (fn), (data), 0)
+#define setup_timer_on_stack_cust(timer, fn, data)				\
+	__setup_timer_on_stack((timer), (fn), (data), 0)
+#define setup_deferrable_timer_on_stack_cust(timer, fn, data)		\
+	__setup_timer_on_stack((timer), (fn), (data), TIMER_DEFERRABLE)
 
 #ifdef CONFIG_DEBUG_OBJECTS_TIMERS
 extern void init_timer_on_stack_key(struct timer_list *timer,
+				    unsigned int flags, const char *name,
+				    struct lock_class_key *key);
+extern void init_timer_on_stack_key_old(struct timer_list *timer,
 				    const char *name,
 				    struct lock_class_key *key);
 extern void destroy_timer_on_stack(struct timer_list *timer);
 #else
 static inline void destroy_timer_on_stack(struct timer_list *timer) { }
 static inline void init_timer_on_stack_key(struct timer_list *timer,
+					   unsigned int flags, const char *name,
+					   struct lock_class_key *key)
+{
+	init_timer_key(timer, flags, name, key);
+}
+static inline void init_timer_on_stack_key_old(struct timer_list *timer,
 					   const char *name,
 					   struct lock_class_key *key)
 {
-	init_timer_key(timer, name, key);
+	init_timer_key_old(timer, name, key);
 }
 #endif
 
@@ -171,7 +225,7 @@ static inline void setup_timer_key(struct timer_list * timer,
 {
 	timer->function = function;
 	timer->data = data;
-	init_timer_key(timer, name, key);
+	init_timer_key_old(timer, name, key);
 }
 
 static inline void setup_timer_on_stack_key(struct timer_list *timer,
@@ -182,7 +236,7 @@ static inline void setup_timer_on_stack_key(struct timer_list *timer,
 {
 	timer->function = function;
 	timer->data = data;
-	init_timer_on_stack_key(timer, name, key);
+	init_timer_on_stack_key_old(timer, name, key);
 }
 
 extern void setup_deferrable_timer_on_stack_key(struct timer_list *timer,
