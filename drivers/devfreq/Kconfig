@@ -38,10 +38,10 @@ config DEVFREQ_GOV_SIMPLE_ONDEMAND
 	  values that imply the usage rate. A device may provide tuned
 	  values to the governor with data field at devfreq_add_device().
 
-config DEVFREQ_GOV_SIMPLE
-	tristate "Simple"
-	help
-	  Scales gpu frequency up and down with a very simmple algorithm
+#config DEVFREQ_GOV_SIMPLE
+#	tristate "Simple"
+#	help
+#	  Scales gpu frequency up and down with a very simmple algorithm
 
 config DEVFREQ_GOV_PERFORMANCE
 	tristate "Performance"

@@ -108,8 +108,8 @@ static const struct kgsl_functable adreno_functable;
 static struct adreno_device device_3d0 = {
 	.dev = {
 		KGSL_DEVICE_COMMON_INIT(device_3d0.dev),
-		.pwrscale = KGSL_PWRSCALE_INIT(adreno_governors,
-					ARRAY_SIZE(adreno_governors)),
+		//.pwrscale = KGSL_PWRSCALE_INIT(adreno_governors,
+		//			ARRAY_SIZE(adreno_governors)),
 		.name = DEVICE_3D0_NAME,
 		.id = KGSL_DEVICE_3D0,
 		.mh = {
@@ -1837,7 +1837,7 @@ adreno_probe(struct platform_device *pdev)
 
 	adreno_ft_init_sysfs(device);
 
-	kgsl_pwrscale_init(&pdev->dev, CONFIG_MSM_ADRENO_DEFAULT_GOVERNOR);
+	kgsl_pwrscale_init(device);
 
 
 	device->flags &= ~KGSL_FLAGS_SOFT_RESET;

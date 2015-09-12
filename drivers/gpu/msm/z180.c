@@ -559,7 +559,7 @@ static int __devinit z180_probe(struct platform_device *pdev)
 	if (status)
 		goto error_close_ringbuffer;
 
-	kgsl_pwrscale_init(&pdev->dev, CONFIG_MSM_Z180_DEFAULT_GOVERNOR);
+	kgsl_pwrscale_init(device);
 
 	return status;
 
@@ -954,16 +954,16 @@ z180_drawctxt_destroy(struct kgsl_context *context)
 static void z180_power_stats(struct kgsl_device *device,
 			    struct kgsl_power_stats *stats)
 {
-	struct kgsl_pwrscale *pwrscale = &device->pwrscale;
+	struct kgsl_pwrctrl *pwrctrl = &device->pwrctrl;
 	s64 tmp = ktime_to_us(ktime_get());
 
 	memset(stats, 0, sizeof(stats));
-	if (pwrscale->on_time == 0) {
-		pwrscale->on_time = tmp;
+	if (pwrctrl->time == 0) {
+		pwrctrl->time = tmp;
 		stats->busy_time = 0;
 	} else {
-		stats->busy_time = tmp - pwrscale->on_time;
-		pwrscale->on_time = tmp;
+		stats->busy_time = tmp - pwrctrl->time;
+		pwrctrl->time = tmp;
 	}
 }
 

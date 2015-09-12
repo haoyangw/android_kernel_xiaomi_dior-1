@@ -30,6 +30,15 @@
 /* Only two supported levels, min & max */
 #define KGSL_CONSTRAINT_PWR_MAXLEVELS 2
 
+/* Symbolic table for the constraint type */
+#define KGSL_CONSTRAINT_TYPES \
+	{ KGSL_CONSTRAINT_NONE, "None" }, \
+	{ KGSL_CONSTRAINT_PWRLEVEL, "Pwrlevel" }
+/* Symbolic table for the constraint sub type */
+#define KGSL_CONSTRAINT_PWRLEVEL_SUBTYPES \
+	{ KGSL_CONSTRAINT_PWR_MIN, "Min" }, \
+	{ KGSL_CONSTRAINT_PWR_MAX, "Max" }
+
 struct platform_device;
 
 struct kgsl_clk_stats {
@@ -105,10 +114,12 @@ struct kgsl_pwrctrl {
 	uint32_t pcl;
 	unsigned int idle_needed;
 	const char *irq_name;
+	s64 time;
 	bool irq_last;
 	struct kgsl_clk_stats clk_stats;
 	struct pm_qos_request pm_qos_req_dma;
 	unsigned int pm_qos_latency;
+	unsigned int step_mul;
 	bool bus_control;
 	int bus_mod;
 	unsigned int bus_index[KGSL_MAX_PWRLEVELS];
